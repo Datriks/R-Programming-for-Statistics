@@ -1,0 +1,245 @@
+---
+title: "Web-Scraping NBA"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Import the necessary packages
+```{r message=FALSE,warning=FALSE}
+library(tidyverse) # manipulation, visualisation, tidying data
+library(janitor) # cleaning the data
+library(rvest) # scrapping the web data
+#install.packages("hablar") # converts data type
+library(hablar)
+library(flextable)
+```
+
+## Declaring the url of the table to be imported
+```{r message=FALSE,warning=FALSE}
+url = "https://www.basketball-reference.com/allstar/NBA-allstar-career-stats.html"
+# create a var pageobj to read the url address and transform the content into a data frame
+pageobj = read_html(url, as.tibble = T)
+
+# create a variable ALLStarPlayes that is holding the content of the first table from the webpage we imported anterior.
+AllStarsPlayers = pageobj %>% 
+  html_nodes("table") %>% .[[1]] %>% 
+  html_table(fill = T)
+
+view(AllStarsPlayers)
+glimpse(AllStarsPlayers)
+```
+
+
+```{r message=FALSE,warning=FALSE}
+# Notice for All-Star Player stats there is a single data table on the website we specified. Therefore, as shown above we referenced the page object as [[1]] indicating it is the first (in this case only) data table on the site.
+```
+
+## Data Cleaning: Updating Variable Names
+```{r message=FALSE,warning=FALSE}
+# The janitor package offers two functions that help us with the cleaning proocess:
+# Converts all row names to follow tidyverse style requirements
+# column names are changed from capital letters to small letters
+AllStarsPlayers = AllStarsPlayers %>% 
+  row_to_names(row_number = 1, remove_row = T, remove_rows_above = F) %>% 
+  clean_names()
+
+view(AllStarsPlayers)
+names(AllStarsPlayers)
+```
+
+```{r message=FALSE,warning=FALSE}
+# In AllStarPlayers ast: is the total number of assists across all games
+# In AllStarPlayers ast2: is the average number of assists per game
+# In ONeal ast: is the average number of assists per game
+# To avoid confussion we have to create column names that are more descriptive
+AllStarsPlayers = AllStarsPlayers %>% 
+  rename("mins_total" = "mp",
+         "pts_total" = "pts",
+         "trb_total" = "trb",
+         "ast_total" = "ast",
+         "mins_per_game" = "mp_2",
+         "pts_per_game" = "pts_2",
+         "trb_per_game" = "trb_2",
+         "ast_per_game" = "ast_2")
+
+names(AllStarsPlayers)
+```
+## Data Cleaning: Remove Subheadings
+```{r message=FALSE,warning=FALSE}
+# The AllStarPlayers dataset has multiple rows that repeat the variable heading names. This is a useful feature when scrolling through large datasets online, as there is always a row displayed on the screen to reference.
+
+get_dupes(AllStarsPlayers) %>% flextable()
+```
+
+
+```{r message=FALSE,warning=FALSE}
+AllStarsPlayers = AllStarsPlayers %>% 
+  filter(
+    player != "Player" & player != ""
+  )
+
+view(AllStarsPlayers)
+```
+
+## Create New Variables
+```{r message=FALSE,warning=FALSE}
+# verify the the feature characteristics
+glimpse(AllStarsPlayers)
+# As one can see all the columns has been imported by rvest as characters we have now to work on converting them into integers and numeric
+AllStarsPlayers = AllStarsPlayers %>% 
+  convert(int("g", "gs", "mins_total", "fg", "fga", "x3p", "x3pa", "x2p",    
+      "x2pa", "ft", "fta", "orb", "drb", "trb_total", "ast_total",  
+      "stl", "blk", "tov", "pf", "mins_per_game", "pts_per_game",    
+      "trb_per_game", "ast_per_game"),
+      num("fg_percent", "x3p_percent", "x2p_percent", "ft_percent"))
+# evaluate the transformation
+glimpse(AllStarsPlayers)
+```
+
+
+```{r message=FALSE,warning=FALSE}
+# Other data sets, especially those for individual players, calculate the stats as averages per-game. Having variables on the same scale allows us to merge and compare data.
+# Converting the totals to per-game averages can be done using traditional math operators.
+
+AllStarsPlayers = AllStarsPlayers %>% 
+  mutate(
+    fg_per_game = fg / g,
+    fga_per_game = fga / g,
+    x3p_per_game = x3p / g
+  ) %>% 
+  rename(
+    "fg_total" = "fg",
+    "fga_total" = "fga",
+    "x3p_total" = "x3p"
+  )
+
+names(AllStarsPlayers)
+```
+## Import the O'Neal Data set
+```{r message=FALSE, warning=FALSE}
+# put the link into a variable
+url1 = "https://www.basketball-reference.com/players/o/onealsh01.html"
+# read the url link with rvest
+pageobj1 = read_html(url1, as.tibble = T)
+# extract the necessary table by specifying the nr of the table on the web page
+Oneal = pageobj1 %>% html_nodes("table") %>% .[[1]] %>% html_table()
+# get a glimpse of the dta imported
+glimpse(Oneal)
+view(Oneal)
+```
+
+## Select only the evident rows
+```{r message=FALSE,warning=FALSE}
+# use slice function to sebset a data set
+Oneal = Oneal %>% 
+  slice(1:21) %>% 
+  clean_names()
+# check integrity of the data frame 
+view(Oneal)
+glimpse(Oneal)
+```
+## Add the column Player to the Oneal data frame
+```{r message=FALSE,warning=FALSE}
+Oneal = Oneal %>% 
+  mutate(
+    player = "Shaquille O'Neal"
+  )
+
+AllStarsPlayers = AllStarsPlayers %>% 
+  mutate(
+    season = "AllStar"
+  )
+```
+
+
+## Compare the names of the two data frames
+```{r}
+# Instead of individually comparing the files we can use the janitor function compare_df_cols_same().
+compare_df_cols_same(AllStarsPlayers, Oneal, bind_method = "rbind")
+
+```
+## Remove the columns from AllStarPlayers that are not present in Oneal 
+```{r}
+AllStarsPlayers = AllStarsPlayers %>% 
+  select(-ast_total, -ast_per_game, -fg_total, -fga_total, -pf_total, -stl_total,  
+         -tov_total, -x2p_total, -x2pa_total, -x3pa_total, 
+         -x3p_total, -mins_total, -pts_total, -trb_total)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
